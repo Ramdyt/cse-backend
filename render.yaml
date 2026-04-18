@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cse-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+    disk:
+      name: cse-data
+      mountPath: /data
+      sizeGB: 1
