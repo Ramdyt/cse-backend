@@ -4,6 +4,7 @@
   "description": "Backend API pour l'application CSE",
   "main": "server.js",
   "scripts": {
+    "postinstall": "npm rebuild better-sqlite3",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "init-db": "node scripts/initDb.js",
