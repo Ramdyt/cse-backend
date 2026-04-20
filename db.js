@@ -1,18 +1,44 @@
-// db.js — singleton SQLite adapté production/développement
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs   = require('fs');
+// db.js — Pool PostgreSQL (Supabase)
+const { Pool } = require("pg");
 
-// En production sur Render, la base est dans /data (disque persistant)
-// En développement, dans le dossier local data/
-const DB_PATH = process.env.NODE_ENV === 'production'
-  ? '/data/cse.db'
-  : path.join(__dirname, 'data', 'cse.db');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // requis pour Supabase
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
 
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+pool.on("error", (err) => {
+  console.error("PostgreSQL pool error:", err.message);
+});
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Helper : exécuter une requête simple
+async function query(text, params) {
+  const client = await pool.connect();
+  try {
+    return await client.query(text, params);
+  } finally {
+    client.release();
+  }
+}
 
-module.exports = db;
+// Helper : récupérer une seule ligne
+async function getOne(text, params) {
+  const res = await query(text, params);
+  return res.rows[0] || null;
+}
+
+// Helper : récupérer toutes les lignes
+async function getAll(text, params) {
+  const res = await query(text, params);
+  return res.rows;
+}
+
+// Helper : insérer et retourner l'id
+async function insert(text, params) {
+  const res = await query(text + " RETURNING id", params);
+  return res.rows[0]?.id;
+}
+
+module.exports = { pool, query, getOne, getAll, insert };

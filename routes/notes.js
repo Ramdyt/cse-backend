@@ -1,13 +1,10 @@
-// routes/notes.js
+// routes/notes.js — PostgreSQL
 const express = require('express');
-const db      = require('../db');
+const { query, getOne, getAll, insert } = require('../db');
 const { auth } = require('../middleware/auth');
 const { notifyAll } = require('../notifier');
 
 const router = express.Router();
-
-// Ajouter colonnes si manquantes
-try { db.exec(`ALTER TABLE notes ADD COLUMN meeting_id INTEGER REFERENCES meetings(id)`); } catch {}
 
 const NOTE_SELECT = `
   SELECT n.id, n.title, n.content, n.status, n.theme, n.meeting_id,
@@ -32,62 +29,69 @@ function mapNote(n) {
 }
 
 // GET /api/notes
-router.get('/', auth, (req, res) => {
-  const { theme, status } = req.query;
-  let query = NOTE_SELECT;
-  const params = [], conditions = [];
-  if (theme)  { conditions.push('n.theme = ?');  params.push(theme); }
-  if (status) { conditions.push('n.status = ?'); params.push(status); }
-  if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-  query += ' ORDER BY n.created_at DESC';
-  res.json(db.prepare(query).all(...params).map(mapNote));
+router.get('/', auth, async (req, res) => {
+  try {
+    const { theme, status } = req.query;
+    const conditions = [], params = [];
+    if (theme)  { params.push(theme);  conditions.push(`n.theme = $${params.length}`); }
+    if (status) { params.push(status); conditions.push(`n.status = $${params.length}`); }
+    const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+    const notes = await getAll(NOTE_SELECT + where + ' ORDER BY n.created_at DESC', params);
+    res.json(notes.map(mapNote));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/notes
-router.post('/', auth, (req, res) => {
-  const { title, content, status = 'proposition', theme, meeting_id } = req.body;
-  if (!title?.trim()) return res.status(400).json({ error: 'Titre requis' });
-  if (!VALID_STATUS.includes(status)) return res.status(400).json({ error: 'Statut invalide' });
+router.post('/', auth, async (req, res) => {
+  try {
+    const { title, content, status = 'proposition', theme, meeting_id } = req.body;
+    if (!title?.trim()) return res.status(400).json({ error: 'Titre requis' });
+    if (!VALID_STATUS.includes(status)) return res.status(400).json({ error: 'Statut invalide' });
 
-  const result = db.prepare(
-    'INSERT INTO notes (title, content, status, theme, author_id, meeting_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(title.trim(), content || '', status, theme || null, req.user.id, meeting_id || null);
-
-  const newNote = db.prepare(NOTE_SELECT + ' WHERE n.id = ?').get(result.lastInsertRowid);
-  notifyAll('📝 Nouvelle note', `${req.user.name} a ajouté : "${title.trim()}"`, 'info', '/notes', req.user.id).catch(()=>{});
-  res.status(201).json(mapNote(newNote));
+    const id = await insert(
+      'INSERT INTO notes (title, content, status, theme, author_id, meeting_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [title.trim(), content || '', status, theme || null, req.user.id, meeting_id || null]
+    );
+    const newNote = await getOne(NOTE_SELECT + ' WHERE n.id = $1', [id]);
+    notifyAll('📝 Nouvelle note', `${req.user.name} a ajouté : "${title.trim()}"`, 'info', '/notes', req.user.id).catch(() => {});
+    res.status(201).json(mapNote(newNote));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // PATCH /api/notes/:id
-router.patch('/:id', auth, (req, res) => {
-  const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id);
-  if (!note) return res.status(404).json({ error: 'Note introuvable' });
+router.patch('/:id', auth, async (req, res) => {
+  try {
+    const note = await getOne('SELECT * FROM notes WHERE id = $1', [req.params.id]);
+    if (!note) return res.status(404).json({ error: 'Note introuvable' });
 
-  const { title, content, status, theme, meeting_id } = req.body;
-  if (status && !VALID_STATUS.includes(status)) return res.status(400).json({ error: 'Statut invalide' });
+    const { title, content, status, theme, meeting_id } = req.body;
+    if (status && !VALID_STATUS.includes(status)) return res.status(400).json({ error: 'Statut invalide' });
 
-  db.prepare(`
-    UPDATE notes SET
-      title      = COALESCE(?, title),
-      content    = COALESCE(?, content),
-      status     = COALESCE(?, status),
-      theme      = COALESCE(?, theme),
-      meeting_id = COALESCE(?, meeting_id),
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(title || null, content || null, status || null, theme || null, meeting_id || null, req.params.id);
+    await query(`
+      UPDATE notes SET
+        title      = COALESCE($1, title),
+        content    = COALESCE($2, content),
+        status     = COALESCE($3, status),
+        theme      = COALESCE($4, theme),
+        meeting_id = COALESCE($5, meeting_id),
+        updated_at = NOW()
+      WHERE id = $6
+    `, [title || null, content ?? null, status || null, theme || null, meeting_id || null, req.params.id]);
 
-  const updated = db.prepare(NOTE_SELECT + ' WHERE n.id = ?').get(req.params.id);
-  if (status) notifyAll('📝 Note mise à jour', `"${updated.title}" → ${status}`, 'info', '/notes', req.user.id).catch(()=>{});
-  res.json(mapNote(updated));
+    const updated = await getOne(NOTE_SELECT + ' WHERE n.id = $1', [req.params.id]);
+    if (status) notifyAll('📝 Note mise à jour', `"${updated.title}" → ${status}`, 'info', '/notes', req.user.id).catch(() => {});
+    res.json(mapNote(updated));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // DELETE /api/notes/:id
-router.delete('/:id', auth, (req, res) => {
-  if (!db.prepare('SELECT id FROM notes WHERE id = ?').get(req.params.id))
-    return res.status(404).json({ error: 'Note introuvable' });
-  db.prepare('DELETE FROM notes WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const note = await getOne('SELECT id FROM notes WHERE id = $1', [req.params.id]);
+    if (!note) return res.status(404).json({ error: 'Note introuvable' });
+    await query('DELETE FROM notes WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;
