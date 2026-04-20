@@ -7,7 +7,7 @@ const path       = require('path');
 const jwt        = require('jsonwebtoken');
 const { query, getOne, insert } = require('./db');
 
-const SECRET = process.env.JWT_SECRET || 'cse-secret-key-changez-moi-en-prod';
+const SECRET = process.env.JWT_SECRET || 'cse-connect2026';
 const PORT   = process.env.PORT || 3001;
 
 const app    = express();
