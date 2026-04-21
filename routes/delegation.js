@@ -20,7 +20,7 @@ async function sendMail({ subject, html }) {
       auth: { user: cfg.smtp_user, pass: cfg.smtp_pass },
       tls: { rejectUnauthorized: false },
     });
-    await transporter.sendMail({ from: `"CSE Connect" <${cfg.smtp_user}>`, to: cfg.rh_email, subject, html });
+    await transporter.sendMail({ from: `"CSE Connect" <${cfg.smtp_user}>`, to: cfg.rh_email, cc: cfg.smtp_user, subject, html });
     console.log(`[Mail] ✅ Email envoyé`);
   } catch (e) { console.error('[Mail] ⚠️', e.message); }
 }
