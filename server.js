@@ -56,8 +56,24 @@ app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISO
 // Route ping — garde Supabase éveillé (appeler toutes les 48h via UptimeRobot)
 app.get('/api/ping', async (req, res) => {
   try {
-    await query('SELECT 1'); // ping la base PostgreSQL
+    await query('SELECT 1');
     res.json({ ok: true, pong: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Route debug — test insertion notification
+app.get('/api/debug/notif', async (req, res) => {
+  try {
+    const users = await query('SELECT id FROM users WHERE pending = FALSE LIMIT 1');
+    if (!users.rows.length) return res.json({ ok: false, error: 'Aucun utilisateur' });
+    const userId = users.rows[0].id;
+    await query(
+      'INSERT INTO notifications (user_id, title, body, type, link) VALUES ($1,$2,$3,$4,$5)',
+      [userId, 'Test notification', 'Si tu vois ca les notifications fonctionnent', 'info', '/chat']
+    );
+    res.json({ ok: true, user_id: userId });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
