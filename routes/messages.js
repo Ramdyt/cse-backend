@@ -70,6 +70,12 @@ router.post('/:channelName', auth, async (req, res) => {
       SELECT m.id, m.text, m.created_at, u.id as user_id, u.name as user_name, u.avatar, u.role
       FROM messages m JOIN users u ON u.id = m.user_id WHERE m.id = $1
     `, [id]);
+    // Notifier tous les membres sauf l'auteur
+    notifyAll(
+      `💬 #${channel.name}`,
+      `${req.user.name} : ${text.trim().slice(0, 80)}${text.trim().length > 80 ? '…' : ''}`,
+      'info', '/chat', req.user.id
+    ).catch(() => {});
     res.status(201).json({ id: msg.id, text: msg.text, created_at: msg.created_at, user: { id: msg.user_id, name: msg.user_name, avatar: msg.avatar, role: msg.role } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
