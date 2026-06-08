@@ -7,7 +7,7 @@ const path       = require('path');
 const jwt        = require('jsonwebtoken');
 const { query, getOne, insert } = require('./db');
 
-const SECRET = process.env.JWT_SECRET || 'cse-connect2026';
+const SECRET = process.env.JWT_SECRET || 'cse-secret-key-changez-moi-en-prod';
 const PORT   = process.env.PORT || 3001;
 
 const app    = express();
@@ -108,6 +108,14 @@ io.on('connection', (socket) => {
         created_at: new Date().toISOString(),
         user: { id: user.id, name: user.name, avatar: user.avatar, role: user.role },
       };
+
+      // Notifier tous les membres sauf l'auteur
+      const { notifyAll } = require('./notifier');
+      notifyAll(
+        `💬 #${channelName}`,
+        `${user.name} : ${text.trim().slice(0, 80)}${text.trim().length > 80 ? '…' : ''}`,
+        'info', '/chat', user.id
+      ).catch(() => {});
       io.to(`channel:${channelName}`).emit('new_message', { channelName, message });
     } catch (e) {
       console.error('[socket send_message]', e.message);
