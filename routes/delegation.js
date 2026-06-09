@@ -26,6 +26,53 @@ async function sendMail({ subject, html }) {
   } catch (e) { console.error('[Mail] ⚠️', e.message); }
 }
 
+// ── Template mail ────────────────────────────────────────────────────────────
+function mailTemplate(title, rows, footer = '') {
+  const rowsHtml = rows.map(([label, value]) => `
+    <tr>
+      <td style="padding:8px 12px; font-weight:600; color:#555; white-space:nowrap; border-bottom:1px solid #f0f0f0; width:35%">${label}</td>
+      <td style="padding:8px 12px; color:#222; border-bottom:1px solid #f0f0f0">${value}</td>
+    </tr>`).join('');
+  return `
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+    <body style="margin:0; padding:0; background:#f4f6f9; font-family:'Segoe UI',Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9; padding:30px 0;">
+        <tr><td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%;">
+            <!-- Header -->
+            <tr>
+              <td style="background:#1a2340; padding:24px 32px; border-radius:12px 12px 0 0; text-align:center;">
+                <div style="font-size:22px; font-weight:700; color:#ffffff; letter-spacing:1px;">CSE Connect</div>
+                <div style="font-size:13px; color:#8899bb; margin-top:4px;">Espace membres du CSE</div>
+              </td>
+            </tr>
+            <!-- Body -->
+            <tr>
+              <td style="background:#ffffff; padding:28px 32px;">
+                <p style="margin:0 0 6px; font-size:15px; color:#333;">Bonjour,</p>
+                <p style="margin:0 0 20px; font-size:15px; color:#333;">${title}</p>
+                <table width="100%" cellpadding="0" cellspacing="0"
+                  style="border:1px solid #e8ecf0; border-radius:8px; overflow:hidden; border-collapse:collapse; font-size:14px;">
+                  ${rowsHtml}
+                </table>
+                ${footer ? `<p style="margin:20px 0 0; font-size:13px; color:#888;">${footer}</p>` : ''}
+              </td>
+            </tr>
+            <!-- Footer -->
+            <tr>
+              <td style="background:#f8f9fb; padding:16px 32px; border-radius:0 0 12px 12px; border-top:1px solid #eee; text-align:center;">
+                <p style="margin:0; font-size:12px; color:#aaa;">Cet email a été envoyé automatiquement par <strong>CSE Connect</strong>.<br>Merci de ne pas répondre directement à ce message.</p>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </body>
+    </html>`;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 async function getActiveMembers() {
   return getAll('SELECT id, name, avatar, role, titulaire FROM users WHERE pending = FALSE ORDER BY name ASC');
@@ -188,13 +235,16 @@ router.post('/entries', auth, async (req, res) => {
     const allUsers   = await getActiveMembers();
     for (const u of allUsers) await createNotification(u.id, "⏱ Prise d'heures", body, 'delegation', '/delegation');
 
+    const rowsPrise = [
+      ['Bénéficiaire', taker?.name || '—'],
+      ['Compteur', ownerLabel],
+      ['Heures', `${hours}h`],
+      ['Date', date],
+      ...(description ? [['Motif', description]] : []),
+    ];
     sendMail({
       subject: `[CSE] Prise d'heures — ${taker?.name}`,
-      html: `<p>Bonjour,</p><p>Une prise d'heures a été enregistrée :</p>
-        <ul><li><b>Bénéficiaire :</b> ${taker?.name}</li><li><b>Compteur :</b> ${ownerLabel}</li>
-        <li><b>Heures :</b> ${hours}h</li><li><b>Date :</b> ${date}</li>
-        ${description ? `<li><b>Motif :</b> ${description}</li>` : ''}</ul>
-        <p>Cordialement,<br>CSE Connect</p>`,
+      html: mailTemplate("Une prise d'heures a été enregistrée :", rowsPrise),
     });
 
     res.status(201).json({ id, success: true });
@@ -255,13 +305,16 @@ router.patch('/transfers/:id', auth, async (req, res) => {
     await createNotification(t.to_id, `Mutualisation ${label}`, `${fromUser?.name} a ${status==='approved'?'approuvé':'refusé'} ${t.hours}h`, status==='approved'?'success':'error', '/delegation');
 
     if (status === 'approved') {
+      const rowsMut = [
+        ['De (titulaire)', fromUser?.name || '—'],
+        ['À (bénéficiaire)', toUser?.name || '—'],
+        ['Heures', `${t.hours}h`],
+        ['Date', t.date],
+        ...(t.note ? [['Motif', t.note]] : []),
+      ];
       sendMail({
-        subject: "[CSE] Mutualisation d'heures approuvée",
-        html: `<p>Bonjour,</p><p>Une mutualisation a été approuvée :</p>
-          <ul><li><b>De :</b> ${fromUser?.name}</li><li><b>À :</b> ${toUser?.name}</li>
-          <li><b>Heures :</b> ${t.hours}h</li><li><b>Date :</b> ${t.date}</li>
-          ${t.note ? `<li><b>Motif :</b> ${t.note}</li>` : ''}</ul>
-          <p>Cordialement,<br>CSE Connect</p>`,
+        subject: "[CSE] Demande d'heures approuvée",
+        html: mailTemplate("Une demande d'heures a été approuvée :", rowsMut),
       });
     }
     res.json({ success: true, status });
