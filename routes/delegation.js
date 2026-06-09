@@ -20,7 +20,8 @@ async function sendMail({ subject, html }) {
       auth: { user: cfg.smtp_user, pass: cfg.smtp_pass },
       tls: { rejectUnauthorized: false },
     });
-    await transporter.sendMail({ from: `"CSE Connect" <${cfg.smtp_user}>`, to: cfg.rh_email, cc: cfg.smtp_user, subject, html });
+    const fromAddr = cfg.smtp_from || cfg.smtp_user;
+    await transporter.sendMail({ from: `"CSE Connect" <${fromAddr}>`, to: cfg.rh_email, cc: fromAddr, subject, html });
     console.log(`[Mail] ✅ Email envoyé`);
   } catch (e) { console.error('[Mail] ⚠️', e.message); }
 }
@@ -90,7 +91,7 @@ async function poolBalance(year, month) {
 // ── GET /config ────────────────────────────────────────────────────────────────
 router.get('/config', auth, async (req, res) => {
   try {
-    const cfg = await getOne('SELECT id,hours_titulaire,hours_suppleant,max_report,rh_email,smtp_host,smtp_port,smtp_user,updated_at FROM delegation_config WHERE id=1');
+    const cfg = await getOne('SELECT id,hours_titulaire,hours_suppleant,max_report,rh_email,smtp_host,smtp_port,smtp_user,smtp_from,updated_at FROM delegation_config WHERE id=1');
     res.json(cfg || { hours_titulaire:20, hours_suppleant:7, max_report:30, rh_email:'', smtp_host:'', smtp_port:587, smtp_user:'' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -112,6 +113,7 @@ router.patch('/config', auth, async (req, res) => {
     if (smtp_port       !== undefined) add('smtp_port',       parseInt(smtp_port)||587);
     if (smtp_user       !== undefined) add('smtp_user',       smtp_user);
     if (smtp_pass)                     add('smtp_pass',       smtp_pass);
+    if (req.body.smtp_from !== undefined) add('smtp_from', req.body.smtp_from);
     sets.push('updated_at=NOW()');
     if (sets.length > 1) await query(`UPDATE delegation_config SET ${sets.join(',')} WHERE id=1`, vals);
     res.json({ success: true });
